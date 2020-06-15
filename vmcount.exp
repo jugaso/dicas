@@ -1,0 +1,73 @@
+#!/usr/bin/expect
+# Usage: ./vmcount.exp 1234@default
+
+# The user account from manager.conf:
+set username "user"
+set secret "pass"
+set host "127.0.0.1"
+set port "5038"
+
+if {[llength $argv] != 1} {
+    send_user "Error: You must specify a mailbox!\n"
+    exit 1
+}
+
+# First argument is the mailbox:
+set mailbox [lindex $argv 0]
+send_user "Mailbox: $mailbox\n"
+
+# Mute output to stdout:
+log_user 0
+
+# Open connection to AMI:
+spawn telnet $host $port
+
+# Just in case telnet aborts because it cannot connect:
+expect_before eof {
+    send_user "Failed to connect.\n"
+    exit 1
+}
+
+# Wait for the text "Manager"; once received, send a login packet:
+#
+expect "Manager" {
+    send_user "Connected.\n"
+    send "Action: Login\nUsername: $username\nSecret: $secret\n\n"
+    # Please note that telnet automatically converts line feeds
+    # (\n) to CR LF (\r\n) - so you must not write \r\n here.
+}
+
+# Login successful?:
+#
+expect {
+    -re "Response:\\s*Error" {
+        send_user "Login failed.\n"
+        exit 1
+    }
+    -re "Response:\\s*Success" {
+        send_user "Logged in.\n"
+        # Query the number of messages in the mailbox:
+        send "Action: MailboxCount\nMailbox: $mailbox\n\n"
+    }
+}
+
+expect {
+    -re "Response:\\s*Error" {
+        send_user "Query of mailbox failed.\n"
+        exit 1
+    }
+    -re "Response:\\s*Success" {}
+}
+expect {
+    -re "NewMessages:\\s*(\[\\d]*)" {
+        send_user "New messages: $expect_out(1,string)\n"
+    }
+}
+expect {
+    -re "OldMessages:\\s*(\[\\d]*)" {
+        send_user "Old messages: $expect_out(1,string)\n"
+    }
+}
+
+# Log out -- not strictly necessary, but cleaner:
+send "Action: Logoff\n\n"
